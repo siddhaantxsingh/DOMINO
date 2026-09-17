@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DOMINO — see a failure spread, and where to stop it</title>
+<style>
+:root{
+  --bg:#080B10; --panel:#111922; --panel2:#18222E; --line:#22303F; --line2:#31465C;
+  --ink:#EAF2F9; --ink2:#A4B6C7; --ink3:#78899B; --ink4:#55footerX;
+  --ink4:#5A6B7C;
+  --amber:#FF8A3D; --red:#FF5449; --teal:#2FD6A8; --violet:#A98BFF; --blue:#5FA0FF;
+  --glow:0 0 22px rgba(255,138,61,.20);
+}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);
+  background:
+    radial-gradient(1100px 620px at 78% -8%, rgba(255,138,61,.09), transparent 62%),
+    radial-gradient(900px 560px at 4% 106%, rgba(169,139,255,.09), transparent 60%),
+    var(--bg);
+  background-attachment:fixed;
+  font-family:"Libre Franklin",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:15px;line-height:1.5}
+.disp,h1,h2{font-family:"Source Serif 4",Georgia,"Times New Roman",serif}
+.shell{max-width:1320px;margin:0 auto;padding:0 20px 40px}
+
+.top{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.top .bar{width:5px;height:26px;background:var(--amber);border-radius:2px}
+.top h1{margin:0;font-size:22px;letter-spacing:.05em}
+.top .sub{color:var(--ink3);font-size:13px}
+.top .right{margin-left:auto;color:var(--ink4);font-size:12px;letter-spacing:.06em}
+
+.intro{margin:16px 0 0;padding:14px 18px;border:1px solid var(--line);
+  border-left:4px solid var(--amber);border-radius:6px;
+  background:linear-gradient(90deg,rgba(255,138,61,.07),var(--panel) 45%)}
+.intro b{color:var(--ink)}
+.intro .k{display:inline-block;margin-right:18px;color:var(--ink2);font-size:13.5px}
+
+.tabs{display:flex;gap:6px;margin:18px 0 0;border-bottom:1px solid var(--line)}
+.tab{padding:10px 16px;border:1px solid transparent;border-bottom:none;cursor:pointer;
+  font-size:14px;color:var(--ink3);border-radius:4px 4px 0 0}
+.tab.on{background:var(--panel);border-color:var(--line);color:var(--ink);font-weight:700;
+  margin-bottom:-1px}
+.tab .n{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;
+  border-radius:50%;background:var(--panel2);font-size:11px;margin-right:7px;font-weight:700}
+.tab.on .n{background:var(--amber);color:#0B1017}
+.page{display:none;padding-top:18px}
+.page.on{display:block}
+
+.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:20px;align-items:start}
+@media (max-width:1050px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:16px 18px}
+.lbl{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);font-weight:700}
+svg{width:100%;height:auto;display:block;background:#0B1017;border:1px solid var(--line);border-radius:6px}
+svg .hit{cursor:pointer}
+
+.bar-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+button,select{font:inherit;font-size:14px;padding:8px 14px;border:1px solid var(--line2);
+  background:var(--panel2);border-radius:4px;color:var(--ink);cursor:pointer;
+  transition:border-color .15s, color .15s, background .15s}
+button:hover:not(:disabled){border-color:var(--amber);color:var(--amber)}
+button:disabled{opacity:.35;cursor:default}
+button.primary{background:var(--amber);border-color:var(--amber);color:#0B1017;font-weight:700}
+button.primary:hover{background:#ff9d5e;color:#0B1017}
+button.primary{box-shadow:var(--glow)}
+button.on{background:var(--amber);border-color:var(--amber);color:#0B1017;font-weight:700;box-shadow:var(--glow)}
+.stepdots{display:flex;gap:6px;align-items:center;margin-left:auto;color:var(--ink4);font-size:12.5px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.dot.on{background:var(--amber);box-shadow:0 0 9px rgba(255,138,61,.7)}
+
+.say{border:1px solid var(--line2);border-left:5px solid var(--amber);border-radius:6px;
+  padding:16px 18px;background:linear-gradient(180deg,var(--panel2),var(--panel))}
+.say .h{font-family:"Source Serif 4",Georgia,serif;font-size:21px;font-weight:700;line-height:1.25}
+.say .b{margin-top:8px;color:var(--ink2);font-size:14.5px}
+.say.good{border-left-color:var(--teal)} .say.bad{border-left-color:var(--red)}
+.say.dark{border-left-color:var(--violet)}
+
+.num{display:flex;align-items:baseline;gap:12px;margin-top:14px}
+.num .v{font-family:"Source Serif 4",Georgia,serif;font-size:42px;font-weight:700;line-height:1}
+.num .t{color:var(--ink3);font-size:13.5px}
+.meter{height:10px;background:var(--panel2);border-radius:5px;overflow:hidden;margin-top:8px}
+.meter i{display:block;height:100%;background:var(--teal);border-radius:5px;
+  transition:width .4s;box-shadow:0 0 12px rgba(47,214,168,.45)}
+
+.why{margin-top:6px}
+.why .r{display:flex;justify-content:space-between;font-size:13px;color:var(--ink2);margin-top:9px}
+.track{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-top:3px}
+.track i{display:block;height:100%;border-radius:4px}
+.opt{display:flex;justify-content:space-between;gap:10px;padding:9px 11px;border:1px solid var(--line);
+  border-radius:4px;margin-top:7px;font-size:13.5px;background:var(--panel2)}
+.opt.holds{border-color:var(--teal);background:rgba(47,214,168,.10);
+  box-shadow:0 0 16px rgba(47,214,168,.12)}
+.opt .s{font-size:11.5px;color:var(--ink4)}
+.tag{font-size:11px;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:99px;
+  border:1px solid currentColor;font-weight:700;white-space:nowrap}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.two{grid-template-columns:1fr}}
+.plan{border:1px solid var(--line);border-radius:6px;padding:16px 18px;background:var(--panel)}
+.plan.win{border-color:var(--teal);border-width:2px;background:rgba(47,214,168,.07);
+  box-shadow:0 0 30px rgba(47,214,168,.10)}
+.plan h3{margin:0;font-size:17px}
+.buy{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;
+  border-bottom:1px dashed var(--line);color:var(--ink2)}
+.vs{display:flex;align-items:flex-end;gap:18px;margin-top:8px}
+.vs .col{flex:1}
+.vs .bx{height:26px;border-radius:3px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink3);
+  padding:8px;border-bottom:1px solid var(--line2)}
+td{padding:8px;border-bottom:1px solid var(--line)}
+tr.sel td{background:rgba(255,138,61,.12)}
+tbody tr:hover td{background:var(--panel2);cursor:pointer}
+details{margin-top:14px;font-size:13px;color:var(--ink2)}
+summary{cursor:pointer;color:var(--ink3);font-weight:700;font-size:12.5px;
+  letter-spacing:.06em;text-transform:uppercase}
+.foot{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);
+  color:var(--ink4);font-size:12px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--ink3)}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:22px;height:5px;border-radius:3px}
+</style></head><body><div class="shell">
+
+<style>
+@keyframes pulse{0%{opacity:.55;r:14}70%{opacity:0;r:30}100%{opacity:0;r:30}}
+#map .pulse{animation:pulse 2.2s ease-out infinite}
+.top h1{background:linear-gradient(92deg,var(--ink),var(--amber));
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+</style>
+<div class="top">
+  <div class="bar"></div>
+  <div><h1>DOMINO</h1>
+    <div class="sub">See a failure spread through a city, and find where you can still stop it.</div></div>
+  <div class="right">M#26 · P05 CASCADING FAILURE · TEAM MOSSAD.EXE</div>
+</div>
+
+<div class="intro">
+  <b>What you are looking at.</b> A small coastal city corridor, drawn as a map below.
+  Everything here is computed live by our engine, not drawn by hand.
+  <div style="margin-top:8px">
+    <span class="k">🏘 <b id="i-wards">8</b> neighbourhoods</span>
+    <span class="k">👥 <b id="i-pop"></b> people</span>
+    <span class="k">🏥 1 hospital · 🚒 1 fire station</span>
+    <span class="k">🌉 3 river bridges</span>
+    <span class="k">📡 5 phone towers</span>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab on" data-p="p1"><span class="n">1</span>Watch a failure spread</div>
+  <div class="tab" data-p="p2"><span class="n">2</span>Where to spend the money</div>
+  <div class="tab" data-p="p3"><span class="n">3</span>Every asset at a glance</div>
+</div>
+
+<!-- ───────────────────────────────── TAB 1 -->
+<div class="page on" id="p1">
+  <div class="grid">
+    <div class="card">
+      <div class="bar-ctl">
+        <span class="lbl">Break something</span>
+        <select id="seed" style="font:inherit;padding:8px 10px;border:1px solid var(--line2);border-radius:3px"></select>
+        <button id="prev">◀</button>
+        <button id="next" class="primary">Next step ▶</button>
+        <button id="play">▶ Play</button>
+        <button id="reset">Reset</button>
+        <div class="stepdots" id="dots"></div>
+      </div>
+      <svg id="map" viewBox="0 0 520 590" role="img" aria-label="corridor map"></svg>
+      <div class="legend">
+        <span><i class="sw" style="background:#35485C"></i> road, quiet</span>
+        <span><i class="sw" style="background:#FF8A3D"></i> road, filling up</span>
+        <span><i class="sw" style="background:#FF5449"></i> road, over capacity</span>
+        <span><i class="sw" style="height:0;border-top:3px dashed #FF5449"></i> jammed, unusable</span>
+        <span>◯ neighbourhood, with its distance to help</span>
+        <span style="color:var(--violet)">◯ dark zone</span>
+      </div>
+      <div style="margin-top:8px;font-size:12.5px;color:var(--ink4)">
+        Tip: click any road on the map to break that one instead.
+      </div>
+    </div>
+
+    <div>
+      <div class="say" id="say"><div class="h"></div><div class="b"></div></div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="lbl">People who can still reach a hospital or fire station</div>
+        <div class="num"><div class="v" id="acc">—</div><div class="t" id="accT"></div></div>
+        <div class="meter"><i id="accBar" style="width:0%"></i></div>
+      </div>
+
+      <div class="card" style="margin-top:16px" id="domCard">
+        <div class="lbl">What breaks next, and why</div>
+        <div id="domBody" style="color:var(--ink4);margin-top:8px">
+          Press <b>Next step</b> to begin.</div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="lbl">Could it have been stopped?</div>
+        <div class="num"><div class="v" id="hz">—</div><div class="t" id="hzT"></div></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="lbl">Neighbourhoods that go dark</div>
+        <div style="font-size:13px;color:var(--ink3);margin-top:4px">
+          Dark means both things at once: no road to help, and no phone signal.</div>
+        <div id="dz" style="margin-top:8px;color:var(--ink4)">None yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────────────── TAB 2 -->
+<div class="page" id="p2">
+  <div class="card">
+    <div class="disp" style="font-size:21px;font-weight:700">
+      “We have a fixed resilience budget this year. Where do we spend it?”</div>
+    <div style="color:var(--ink2);margin-top:8px;max-width:78ch">
+      We answer it by running every possible failure, measuring how many people lose
+      access to help on average, then buying the repairs that win back the most people
+      per rupee. The standard way to do this is to reinforce the most central roads
+      first. Both plans below are computed by the same engine, on the same budget.
+    </div>
+    <div class="bar-ctl" style="margin-top:16px">
+      <span class="lbl">Budget</span><span id="budgets"></span>
+    </div>
+
+    <div class="two" style="margin-top:6px">
+      <div class="plan" id="planC">
+        <h3>The standard method</h3>
+        <div style="font-size:13px;color:var(--ink3)">Reinforce the most central roads first.</div>
+        <div id="cBuys" style="margin-top:12px"></div>
+        <div class="num"><div class="v" id="cProt" style="font-size:34px;color:var(--ink3)"></div>
+          <div class="t">more people protected<br><span id="cSpent" style="color:var(--ink4)"></span></div></div>
+      </div>
+      <div class="plan win" id="planD">
+        <h3 style="color:var(--teal)">DOMINO</h3>
+        <div style="font-size:13px;color:var(--ink3)">Buy back the most service per rupee.</div>
+        <div id="dBuys" style="margin-top:12px"></div>
+        <div class="num"><div class="v" id="dProt" style="font-size:34px;color:var(--teal)"></div>
+          <div class="t">more people protected<br><span id="dSpent" style="color:var(--ink4)"></span></div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px;background:var(--panel2)">
+      <div class="lbl">Same budget, side by side</div>
+      <div class="vs">
+        <div class="col"><div class="bx" id="barC" style="background:var(--ink3)"></div>
+          <div style="font-size:12.5px;color:var(--ink3);margin-top:5px">Standard method</div></div>
+        <div class="col"><div class="bx" id="barD" style="background:var(--teal)"></div>
+          <div style="font-size:12.5px;color:var(--ink3);margin-top:5px">DOMINO</div></div>
+      </div>
+      <div class="disp" id="verdict" style="font-size:19px;font-weight:700;margin-top:16px"></div>
+      <div id="verdict2" style="color:var(--ink2);font-size:14px;margin-top:6px"></div>
+    </div>
+
+    <details>
+      <summary>How the money number is worked out</summary>
+      <p>Hardening an asset means reinforcing and widening it, the same action the engine
+      tests during a cascade. Costs are indicative unit rates
+      (₹1.2 crore per km of road, ₹6 crore per km of bridge) and would be replaced by the
+      city's own schedule of rates. Expected loss is the average number of people who end
+      up outside 5 km of a hospital or fire station, taken across every single-asset
+      failure in the corridor. The resilience score is simply how much of the population
+      keeps its access in that average failure.</p>
+    </details>
+  </div>
+</div>
+
+<!-- ───────────────────────────────── TAB 3 -->
+<div class="page" id="p3">
+  <div class="card">
+    <div class="lbl">Every asset, with what happens if it fails</div>
+    <div style="color:var(--ink2);margin-top:6px;max-width:78ch">
+      Run once, offline, ahead of time. During an emergency nobody has time to start a
+      simulation, so the answers are already on the shelf. Click any row to watch it.
+    </div>
+    <div style="margin-top:14px;overflow:auto">
+      <table id="pb"><thead><tr>
+        <th>If this fails</th><th>Can we stop it?</th>
+        <th>People who lose access to help</th><th>What to do</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="foot" id="foot"></div>
+</div>
+
+<script>
+const DATA = {"meta":{"baseline_accessibility":89.0,"population":47200,"threshold_km":5.0,"tower_radius_km":2.6,"minutes_per_step":25,"weights":{"load_stress":0.35,"network_dependency":0.25,"emergency_impact":0.25,"population_exposure":0.15},"tower_out":"T1","tower_out_label":"Tower T-04","scenario_count":17},"graph":{"nodes":[{"id":"C1","x":0.0,"y":0.0,"kind":"junction","population":5200,"label":"Malpe ward"},{"id":"C2","x":0.4,"y":2.6,"kind":"junction","population":7400,"label":"Kadiyali ward"},{"id":"C3","x":0.9,"y":5.1,"kind":"junction","population":6100,"label":"Kalsanka ward"},{"id":"C4","x":1.4,"y":7.6,"kind":"junction","population":4300,"label":"Santhekatte ward"},{"id":"I1","x":4.6,"y":0.6,"kind":"junction","population":3100,"label":"Perampalli ward"},{"id":"I2","x":4.9,"y":3.0,"kind":"junction","population":8200,"label":"Manipal south"},{"id":"I3","x":5.2,"y":5.4,"kind":"junction","population":9100,"label":"Manipal centre"},{"id":"I4","x":5.6,"y":7.8,"kind":"junction","population":3800,"label":"Eshwar nagar"},{"id":"X1","x":2.6,"y":0.9,"kind":"junction","population":0,"label":""},{"id":"X2","x":2.8,"y":3.2,"kind":"junction","population":0,"label":""},{"id":"X3","x":3.0,"y":6.0,"kind":"junction","population":0,"label":""},{"id":"H1","x":6.5,"y":4.2,"kind":"hospital","population":0,"label":"Referral hospital"},{"id":"F1","x":1.9,"y":6.2,"kind":"fire","population":0,"label":"Fire station"},{"id":"T1","x":1.2,"y":2.0,"kind":"tower","population":0,"label":"Tower T-04"},{"id":"T2","x":4.5,"y":4.4,"kind":"tower","population":0,"label":"Tower T-11"},{"id":"T3","x":3.4,"y":7.7,"kind":"tower","population":0,"label":"Tower T-19"},{"id":"T4","x":0.6,"y":6.5,"kind":"tower","population":0,"label":"Tower T-06"},{"id":"T5","x":3.8,"y":1.4,"kind":"tower","population":0,"label":"Tower T-02"}],"edges":[{"id":"N1","u":"C1","v":"C2","km":2.63,"capacity":500,"kind":"road","label":"Coastal road N1","alive":true},{"id":"N2","u":"C2","v":"C3","km":2.55,"capacity":825,"kind":"road","label":"Coastal road N2","alive":true},{"id":"N3","u":"C3","v":"C4","km":2.55,"capacity":500,"kind":"road","label":"Coastal road N3","alive":true},{"id":"R11","u":"I1","v":"I2","km":2.42,"capacity":1471,"kind":"road","label":"Inland road R11","alive":true},{"id":"R24","u":"I2","v":"I3","km":2.42,"capacity":740,"kind":"road","label":"Inland road R24","alive":true},{"id":"R31","u":"I3","v":"I4","km":2.43,"capacity":1486,"kind":"road","label":"Inland road R31","alive":true},{"id":"A1","u":"C1","v":"X1","km":2.75,"capacity":795,"kind":"road","label":"Approach A1","alive":true},{"id":"A2","u":"C2","v":"X2","km":2.47,"capacity":1131,"kind":"road","label":"Approach A2","alive":true},{"id":"A3","u":"C3","v":"X3","km":2.28,"capacity":932,"kind":"road","label":"Approach A3","alive":true},{"id":"B03","u":"X1","v":"I1","km":2.02,"capacity":795,"kind":"bridge","label":"Bridge B03","alive":true},{"id":"B07","u":"X2","v":"I2","km":2.11,"capacity":1131,"kind":"bridge","label":"Bridge B07","alive":true},{"id":"B12","u":"X3","v":"I3","km":2.28,"capacity":2516,"kind":"bridge","label":"Bridge B12","alive":true},{"id":"A4","u":"C4","v":"I4","km":4.2,"capacity":657,"kind":"road","label":"North link A4","alive":true},{"id":"HS","u":"I3","v":"H1","km":1.77,"capacity":3559,"kind":"road","label":"Hospital approach","alive":true},{"id":"HS2","u":"I2","v":"H1","km":2.0,"capacity":3651,"kind":"road","label":"Hospital south approach","alive":true},{"id":"FS","u":"C3","v":"F1","km":1.49,"capacity":1506,"kind":"road","label":"Fire station approach","alive":true},{"id":"FS2","u":"X3","v":"F1","km":1.12,"capacity":1584,"kind":"road","label":"Fire east approach","alive":true},{"id":"SR","u":"X2","v":"I3","km":3.3,"capacity":1800,"kind":"service","label":"Old crossing SR-2","alive":false}]},"playbook":[{"seed":"R31","seed_label":"Inland road R31","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Approach A3","Fire station approach","Inland road R24","Hospital south approach"],"action":null,"clock":null,"window_min":null,"final_accessibility":19.3,"dark_zones":2,"first_dark":"Malpe ward at T+0 min","population_at_risk":12600},{"seed":"B12","seed_label":"Bridge B12","kind":"bridge","outcome":"uncontained","horizon":0,"dominoes":["Fire station approach","Approach A3"],"action":null,"clock":null,"window_min":null,"final_accessibility":51.3,"dark_zones":2,"first_dark":"Malpe ward at T+0 min","population_at_risk":12600},{"seed":"FS","seed_label":"Fire station approach","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Fire east approach"],"action":null,"clock":null,"window_min":null,"final_accessibility":51.3,"dark_zones":2,"first_dark":"Kadiyali ward at T+0 min","population_at_risk":12600},{"seed":"FS2","seed_label":"Fire east approach","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Fire station approach"],"action":null,"clock":null,"window_min":null,"final_accessibility":51.3,"dark_zones":2,"first_dark":"Malpe ward at T+0 min","population_at_risk":12600},{"seed":"HS2","seed_label":"Hospital south approach","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Hospital approach"],"action":null,"clock":null,"window_min":null,"final_accessibility":57.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"HS","seed_label":"Hospital approach","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Inland road R24","Coastal road N2"],"action":null,"clock":null,"window_min":null,"final_accessibility":65.3,"dark_zones":2,"first_dark":"Malpe ward at T+0 min","population_at_risk":12600},{"seed":"N2","seed_label":"Coastal road N2","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Inland road R24"],"action":null,"clock":null,"window_min":null,"final_accessibility":73.3,"dark_zones":2,"first_dark":"Kadiyali ward at T+0 min","population_at_risk":12600},{"seed":"R11","seed_label":"Inland road R11","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Approach A2","Bridge B12","Coastal road N3"],"action":null,"clock":null,"window_min":null,"final_accessibility":73.3,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"A2","seed_label":"Approach A2","kind":"road","outcome":"uncontained","horizon":0,"dominoes":["Coastal road N2","Approach A1"],"action":null,"clock":null,"window_min":null,"final_accessibility":73.3,"dark_zones":2,"first_dark":"Malpe ward at T+0 min","population_at_risk":12600},{"seed":"A1","seed_label":"Approach A1","kind":"road","outcome":"contained","horizon":1,"dominoes":["Coastal road N1"],"action":"Contraflow on Coastal road N1","clock":"respond","window_min":90,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"B03","seed_label":"Bridge B03","kind":"bridge","outcome":"contained","horizon":1,"dominoes":["Coastal road N1"],"action":"Contraflow on Coastal road N1","clock":"respond","window_min":90,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"B07","seed_label":"Bridge B07","kind":"bridge","outcome":"contained","horizon":1,"dominoes":["Coastal road N2"],"action":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"A4","seed_label":"North link A4","kind":"road","outcome":"contained","horizon":1,"dominoes":["Coastal road N3"],"action":"Contraflow on Coastal road N3","clock":"respond","window_min":90,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"N3","seed_label":"Coastal road N3","kind":"road","outcome":"no cascade","horizon":0,"dominoes":[],"action":null,"clock":null,"window_min":null,"final_accessibility":79.9,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"N1","seed_label":"Coastal road N1","kind":"road","outcome":"no cascade","horizon":0,"dominoes":[],"action":null,"clock":null,"window_min":null,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"R24","seed_label":"Inland road R24","kind":"road","outcome":"no cascade","horizon":0,"dominoes":[],"action":null,"clock":null,"window_min":null,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200},{"seed":"A3","seed_label":"Approach A3","kind":"road","outcome":"no cascade","horizon":0,"dominoes":[],"action":null,"clock":null,"window_min":null,"final_accessibility":89.0,"dark_zones":1,"first_dark":"Malpe ward at T+0 min","population_at_risk":5200}],"scenarios":{"N1":{"seed":"N1","steps":[{"step":1,"status":"settled"}],"accessibility":[89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":false,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":0.32,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.68,"boosted":1.0},"R24":{"alive":true,"ratio":0.8,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.78,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.78,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.62,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.43,"boosted":1.0},"FS2":{"alive":true,"ratio":0.67,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"N2":{"seed":"N2","steps":[{"step":1,"domino":{"edge":"R24","label":"Inland road R24","score":0.661,"components":{"load_stress":0.721,"network_dependency":0.571,"emergency_impact":0.76,"population_exposure":0.506},"load_ratio":1.16},"interventions":[{"id":"respond:contraflow:R24","label":"Contraflow on Inland road R24","clock":"respond","window_min":90,"accessibility":73.3,"holds":false},{"id":"harden:reinforce:R24","label":"Reinforce and widen Inland road R24","clock":"harden","window_min":null,"accessibility":73.3,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":73.3,"holds":false},{"id":"respond:package:SR+R24","label":"Reopen Old crossing SR-2 + contraflow on Inland road R24","clock":"respond","window_min":90,"accessibility":73.3,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":73.3},{"step":2,"status":"settled"}],"accessibility":[73.3,73.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":73.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":false,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.68,"boosted":1.0},"R24":{"alive":true,"ratio":1.16,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.78,"boosted":1.0},"A2":{"alive":true,"ratio":0.79,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.78,"boosted":1.0},"B07":{"alive":true,"ratio":0.79,"boosted":1.0},"B12":{"alive":true,"ratio":0.73,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.25,"boosted":1.0},"FS2":{"alive":true,"ratio":0.84,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":73.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":false,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.68,"boosted":1.0},"R24":{"alive":false,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.78,"boosted":1.0},"A2":{"alive":true,"ratio":0.79,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.78,"boosted":1.0},"B07":{"alive":true,"ratio":0.79,"boosted":1.0},"B12":{"alive":true,"ratio":0.73,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.79,"boosted":1.0},"HS2":{"alive":true,"ratio":0.79,"boosted":1.0},"FS":{"alive":true,"ratio":0.25,"boosted":1.0},"FS2":{"alive":true,"ratio":0.84,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":7.4},{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"N3":{"seed":"N3","steps":[{"step":1,"status":"settled"}],"accessibility":[79.9],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":79.9,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":false,"ratio":0.0,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.65,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.61,"boosted":1.0},"A4":{"alive":true,"ratio":0.79,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.45,"boosted":1.0},"FS2":{"alive":true,"ratio":0.65,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":8.4,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"R11":{"seed":"R11","steps":[{"step":1,"domino":{"edge":"A2","label":"Approach A2","score":0.703,"components":{"load_stress":0.725,"network_dependency":0.6,"emergency_impact":0.998,"population_exposure":0.333},"load_ratio":1.17},"interventions":[{"id":"respond:contraflow:A2","label":"Contraflow on Approach A2","clock":"respond","window_min":90,"accessibility":82.4,"holds":false},{"id":"harden:reinforce:A2","label":"Reinforce and widen Approach A2","clock":"harden","window_min":null,"accessibility":82.4,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":82.4,"holds":false},{"id":"respond:package:SR+A2","label":"Reopen Old crossing SR-2 + contraflow on Approach A2","clock":"respond","window_min":90,"accessibility":82.4,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":82.4},{"step":2,"domino":{"edge":"B12","label":"Bridge B12","score":0.834,"components":{"load_stress":0.564,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":0.909},"load_ratio":1.03},"interventions":[{"id":"respond:contraflow:B12","label":"Contraflow on Bridge B12","clock":"respond","window_min":90,"accessibility":82.4,"holds":false},{"id":"harden:reinforce:B12","label":"Reinforce and widen Bridge B12","clock":"harden","window_min":null,"accessibility":82.4,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":82.4,"holds":false},{"id":"respond:package:SR+B12","label":"Reopen Old crossing SR-2 + contraflow on Bridge B12","clock":"respond","window_min":90,"accessibility":82.4,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":82.4},{"step":3,"domino":{"edge":"N3","label":"Coastal road N3","score":1.0,"components":{"load_stress":1.0,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":5.49},"interventions":[{"id":"respond:contraflow:N3","label":"Contraflow on Coastal road N3","clock":"respond","window_min":90,"accessibility":82.4,"holds":false},{"id":"harden:reinforce:N3","label":"Reinforce and widen Coastal road N3","clock":"harden","window_min":null,"accessibility":82.4,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":82.4,"holds":false},{"id":"respond:package:SR+N3","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N3","clock":"respond","window_min":90,"accessibility":82.4,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":73.3},{"step":4,"status":"settled"}],"accessibility":[82.4,82.4,82.4,73.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":82.4,"edges":{"N1":{"alive":true,"ratio":1.99,"boosted":1.0},"N2":{"alive":true,"ratio":0.69,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":false,"ratio":0.0,"boosted":1.0},"R24":{"alive":true,"ratio":0.4,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.47,"boosted":1.0},"A2":{"alive":true,"ratio":1.17,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.47,"boosted":1.0},"B07":{"alive":true,"ratio":1.17,"boosted":1.0},"B12":{"alive":true,"ratio":0.51,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.62,"boosted":1.0},"FS2":{"alive":true,"ratio":0.48,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":11.44,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":82.4,"edges":{"N1":{"alive":true,"ratio":1.99,"boosted":1.0},"N2":{"alive":true,"ratio":2.28,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":false,"ratio":0.0,"boosted":1.0},"R24":{"alive":true,"ratio":0.4,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.47,"boosted":1.0},"A2":{"alive":false,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":1.96,"boosted":1.0},"B03":{"alive":true,"ratio":0.47,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":1.03,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.92,"boosted":1.0},"HS2":{"alive":true,"ratio":0.19,"boosted":1.0},"FS":{"alive":true,"ratio":0.62,"boosted":1.0},"FS2":{"alive":true,"ratio":0.48,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":11.44,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":2,"accessibility":82.4,"edges":{"N1":{"alive":true,"ratio":1.99,"boosted":1.0},"N2":{"alive":true,"ratio":2.28,"boosted":1.0},"N3":{"alive":true,"ratio":5.49,"boosted":1.0},"R11":{"alive":false,"ratio":0.0,"boosted":1.0},"R24":{"alive":true,"ratio":0.4,"boosted":1.0},"R31":{"alive":true,"ratio":2.11,"boosted":1.0},"A1":{"alive":true,"ratio":0.47,"boosted":1.0},"A2":{"alive":false,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.47,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":false,"ratio":0.0,"boosted":1.0},"A4":{"alive":true,"ratio":4.49,"boosted":1.0},"HS":{"alive":true,"ratio":0.92,"boosted":1.0},"HS2":{"alive":true,"ratio":0.19,"boosted":1.0},"FS":{"alive":true,"ratio":1.13,"boosted":1.0},"FS2":{"alive":true,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":11.44,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":3,"accessibility":73.3,"edges":{"N1":{"alive":true,"ratio":0.6,"boosted":1.0},"N2":{"alive":true,"ratio":0.69,"boosted":1.0},"N3":{"alive":false,"ratio":0.0,"boosted":1.0},"R11":{"alive":false,"ratio":0.0,"boosted":1.0},"R24":{"alive":true,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.46,"boosted":1.0},"A1":{"alive":true,"ratio":0.14,"boosted":1.0},"A2":{"alive":false,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.14,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":false,"ratio":0.0,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.41,"boosted":1.0},"HS2":{"alive":true,"ratio":0.19,"boosted":1.0},"FS":{"alive":true,"ratio":0.52,"boosted":1.0},"FS2":{"alive":true,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":8.4,"I1":11.44,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"R24":{"seed":"R24","steps":[{"step":1,"status":"settled"}],"accessibility":[89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":false,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.66,"boosted":1.0},"HS2":{"alive":true,"ratio":0.66,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"R31":{"seed":"R31","steps":[{"step":1,"domino":{"edge":"A3","label":"Approach A3","score":0.696,"components":{"load_stress":0.859,"network_dependency":0.5,"emergency_impact":0.903,"population_exposure":0.301},"load_ratio":1.28},"interventions":[{"id":"respond:contraflow:A3","label":"Contraflow on Approach A3","clock":"respond","window_min":90,"accessibility":80.9,"holds":false},{"id":"harden:reinforce:A3","label":"Reinforce and widen Approach A3","clock":"harden","window_min":null,"accessibility":80.9,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":80.9,"holds":false},{"id":"respond:package:SR+A3","label":"Reopen Old crossing SR-2 + contraflow on Approach A3","clock":"respond","window_min":90,"accessibility":80.9,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":80.9},{"step":2,"domino":{"edge":"FS","label":"Fire station approach","score":0.894,"components":{"load_stress":1.0,"network_dependency":0.833,"emergency_impact":1.0,"population_exposure":0.568},"load_ratio":1.43},"interventions":[{"id":"respond:contraflow:FS","label":"Contraflow on Fire station approach","clock":"respond","window_min":90,"accessibility":80.9,"holds":false},{"id":"harden:reinforce:FS","label":"Reinforce and widen Fire station approach","clock":"harden","window_min":null,"accessibility":80.9,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":80.9,"holds":false},{"id":"respond:package:SR+FS","label":"Reopen Old crossing SR-2 + contraflow on Fire station approach","clock":"respond","window_min":90,"accessibility":80.9,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":43.2},{"step":3,"domino":{"edge":"R24","label":"Inland road R24","score":0.94,"components":{"load_stress":1.0,"network_dependency":0.875,"emergency_impact":1.0,"population_exposure":0.807},"load_ratio":1.85},"interventions":[{"id":"respond:contraflow:R24","label":"Contraflow on Inland road R24","clock":"respond","window_min":90,"accessibility":43.2,"holds":false},{"id":"harden:reinforce:R24","label":"Reinforce and widen Inland road R24","clock":"harden","window_min":null,"accessibility":43.2,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":43.2,"holds":false},{"id":"respond:package:SR+R24","label":"Reopen Old crossing SR-2 + contraflow on Inland road R24","clock":"respond","window_min":90,"accessibility":43.2,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":43.2},{"step":4,"domino":{"edge":"HS2","label":"Hospital south approach","score":0.879,"components":{"load_stress":0.826,"network_dependency":0.875,"emergency_impact":1.0,"population_exposure":0.807},"load_ratio":1.25},"interventions":[{"id":"respond:contraflow:HS2","label":"Contraflow on Hospital south approach","clock":"respond","window_min":90,"accessibility":43.2,"holds":false},{"id":"harden:reinforce:HS2","label":"Reinforce and widen Hospital south approach","clock":"harden","window_min":null,"accessibility":43.2,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":43.2,"holds":false},{"id":"respond:package:SR+HS2","label":"Reopen Old crossing SR-2 + contraflow on Hospital south approach","clock":"respond","window_min":90,"accessibility":43.2,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":19.3},{"step":5,"status":"settled"}],"accessibility":[80.9,80.9,43.2,43.2,19.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":80.9,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":1.94,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":false,"ratio":0.0,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":1.28,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.77,"boosted":1.0},"A4":{"alive":true,"ratio":0.69,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.64,"boosted":1.0},"FS2":{"alive":true,"ratio":0.46,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":8.24},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":80.9,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":1.94,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":false,"ratio":0.0,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":false,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.77,"boosted":1.0},"A4":{"alive":true,"ratio":0.69,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":1.43,"boosted":1.0},"FS2":{"alive":true,"ratio":1.22,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":8.24},"dead_towers":["T1"]},{"phase":"domino","step":2,"accessibility":43.2,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":2.07,"boosted":1.0},"N3":{"alive":true,"ratio":1.94,"boosted":1.0},"R11":{"alive":true,"ratio":0.68,"boosted":1.0},"R24":{"alive":true,"ratio":1.85,"boosted":1.0},"R31":{"alive":false,"ratio":0.0,"boosted":1.0},"A1":{"alive":true,"ratio":0.78,"boosted":1.0},"A2":{"alive":true,"ratio":2.29,"boosted":1.0},"A3":{"alive":false,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.78,"boosted":1.0},"B07":{"alive":true,"ratio":2.29,"boosted":1.0},"B12":{"alive":true,"ratio":0.68,"boosted":1.0},"A4":{"alive":true,"ratio":0.69,"boosted":1.0},"HS":{"alive":true,"ratio":0.21,"boosted":1.0},"HS2":{"alive":true,"ratio":0.88,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":true,"ratio":1.07,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":9.13,"C4":11.68,"I1":4.42,"I2":2.0,"I3":1.77,"I4":15.88},"dead_towers":["T1"]},{"phase":"domino","step":3,"accessibility":43.2,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":2.07,"boosted":1.0},"N3":{"alive":true,"ratio":1.94,"boosted":1.0},"R11":{"alive":true,"ratio":0.68,"boosted":1.0},"R24":{"alive":false,"ratio":0.0,"boosted":1.0},"R31":{"alive":false,"ratio":0.0,"boosted":1.0},"A1":{"alive":true,"ratio":0.78,"boosted":1.0},"A2":{"alive":true,"ratio":2.29,"boosted":1.0},"A3":{"alive":false,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.78,"boosted":1.0},"B07":{"alive":true,"ratio":2.29,"boosted":1.0},"B12":{"alive":true,"ratio":0.68,"boosted":1.0},"A4":{"alive":true,"ratio":0.69,"boosted":1.0},"HS":{"alive":true,"ratio":0.6,"boosted":1.0},"HS2":{"alive":true,"ratio":1.25,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":true,"ratio":1.07,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":9.13,"C4":11.68,"I1":4.42,"I2":2.0,"I3":1.77,"I4":15.88},"dead_towers":["T1"]},{"phase":"domino","step":4,"accessibility":19.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.0,"boosted":1.0},"R11":{"alive":true,"ratio":0.0,"boosted":1.0},"R24":{"alive":false,"ratio":0.0,"boosted":1.0},"R31":{"alive":false,"ratio":0.0,"boosted":1.0},"A1":{"alive":true,"ratio":0.0,"boosted":1.0},"A2":{"alive":true,"ratio":0.0,"boosted":1.0},"A3":{"alive":false,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.13,"boosted":1.0},"A4":{"alive":true,"ratio":0.0,"boosted":1.0},"HS":{"alive":true,"ratio":0.21,"boosted":1.0},"HS2":{"alive":false,"ratio":0.0,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":true,"ratio":0.21,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":Infinity,"C2":Infinity,"C3":Infinity,"C4":Infinity,"I1":Infinity,"I2":Infinity,"I3":1.77,"I4":Infinity},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2},{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":50,"t_comm_min":0,"t_dark_min":50,"priority":7.4}]},"A1":{"seed":"A1","steps":[{"step":1,"domino":{"edge":"N1","label":"Coastal road N1","score":0.478,"components":{"load_stress":0.821,"network_dependency":0.2,"emergency_impact":0.496,"population_exposure":0.11},"load_ratio":1.25},"interventions":[{"id":"respond:contraflow:N1","label":"Contraflow on Coastal road N1","clock":"respond","window_min":90,"accessibility":89.0,"holds":true},{"id":"harden:reinforce:N1","label":"Reinforce and widen Coastal road N1","clock":"harden","window_min":null,"accessibility":89.0,"holds":true},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":false},{"id":"respond:package:SR+N1","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N1","clock":"respond","window_min":90,"accessibility":89.0,"holds":true}],"status":"CASCADE STOPPED","action":{"id":"respond:contraflow:N1","label":"Contraflow on Coastal road N1","clock":"respond","window_min":90,"accessibility":89.0,"holds":true},"accessibility_after":89.0}],"accessibility":[89.0,89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":1.25,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.25,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":false,"ratio":0.0,"boosted":1.0},"A2":{"alive":true,"ratio":0.94,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.94,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"stopped","step":1,"accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.96,"boosted":1.3},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.25,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":false,"ratio":0.0,"boosted":1.0},"A2":{"alive":true,"ratio":0.94,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.94,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":1,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"A2":{"seed":"A2","steps":[{"step":1,"domino":{"edge":"N2","label":"Coastal road N2","score":0.651,"components":{"load_stress":0.886,"network_dependency":0.333,"emergency_impact":0.871,"population_exposure":0.267},"load_ratio":1.3},"interventions":[{"id":"respond:contraflow:N2","label":"Contraflow on Coastal road N2","clock":"respond","window_min":90,"accessibility":89.0,"holds":false},{"id":"harden:reinforce:N2","label":"Reinforce and widen Coastal road N2","clock":"harden","window_min":null,"accessibility":89.0,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":false},{"id":"respond:package:SR+N2","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N2","clock":"respond","window_min":90,"accessibility":89.0,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":73.3},{"step":2,"domino":{"edge":"A1","label":"Approach A1","score":0.711,"components":{"load_stress":1.0,"network_dependency":0.286,"emergency_impact":1.0,"population_exposure":0.267},"load_ratio":1.9},"interventions":[{"id":"respond:contraflow:A1","label":"Contraflow on Approach A1","clock":"respond","window_min":90,"accessibility":73.3,"holds":false},{"id":"harden:reinforce:A1","label":"Reinforce and widen Approach A1","clock":"harden","window_min":null,"accessibility":73.3,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":73.3,"holds":false},{"id":"respond:package:SR+A1","label":"Reopen Old crossing SR-2 + contraflow on Approach A1","clock":"respond","window_min":90,"accessibility":73.3,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":73.3},{"step":3,"status":"settled"}],"accessibility":[89.0,73.3,73.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":1.3,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":false,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":1.22,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.8,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.72,"boosted":1.0},"HS2":{"alive":true,"ratio":0.38,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":73.3,"edges":{"N1":{"alive":true,"ratio":1.78,"boosted":1.0},"N2":{"alive":false,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":1.28,"boosted":1.0},"R24":{"alive":true,"ratio":1.16,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":1.9,"boosted":1.0},"A2":{"alive":false,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":1.9,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.73,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.25,"boosted":1.0},"FS2":{"alive":true,"ratio":0.84,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":11.82,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":2,"accessibility":73.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":false,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.25,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":false,"ratio":0.0,"boosted":1.0},"A2":{"alive":false,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.26,"boosted":1.0},"FS":{"alive":true,"ratio":0.25,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":Infinity,"C2":Infinity,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2},{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":25,"t_comm_min":0,"t_dark_min":25,"priority":7.4}]},"A3":{"seed":"A3","steps":[{"step":1,"status":"settled"}],"accessibility":[89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":false,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.89,"boosted":1.0},"FS2":{"alive":true,"ratio":0.87,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"B03":{"seed":"B03","steps":[{"step":1,"domino":{"edge":"N1","label":"Coastal road N1","score":0.478,"components":{"load_stress":0.821,"network_dependency":0.2,"emergency_impact":0.496,"population_exposure":0.11},"load_ratio":1.25},"interventions":[{"id":"respond:contraflow:N1","label":"Contraflow on Coastal road N1","clock":"respond","window_min":90,"accessibility":89.0,"holds":true},{"id":"harden:reinforce:N1","label":"Reinforce and widen Coastal road N1","clock":"harden","window_min":null,"accessibility":89.0,"holds":true},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":false},{"id":"respond:package:SR+N1","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N1","clock":"respond","window_min":90,"accessibility":89.0,"holds":true}],"status":"CASCADE STOPPED","action":{"id":"respond:contraflow:N1","label":"Contraflow on Coastal road N1","clock":"respond","window_min":90,"accessibility":89.0,"holds":true},"accessibility_after":89.0}],"accessibility":[89.0,89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":1.25,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.25,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.0,"boosted":1.0},"A2":{"alive":true,"ratio":0.94,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":false,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.94,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"stopped","step":1,"accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.96,"boosted":1.3},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.25,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.0,"boosted":1.0},"A2":{"alive":true,"ratio":0.94,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":false,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.94,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":1,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"B07":{"seed":"B07","steps":[{"step":1,"domino":{"edge":"N2","label":"Coastal road N2","score":0.651,"components":{"load_stress":0.886,"network_dependency":0.333,"emergency_impact":0.871,"population_exposure":0.267},"load_ratio":1.3},"interventions":[{"id":"respond:contraflow:N2","label":"Contraflow on Coastal road N2","clock":"respond","window_min":90,"accessibility":89.0,"holds":false},{"id":"harden:reinforce:N2","label":"Reinforce and widen Coastal road N2","clock":"harden","window_min":null,"accessibility":89.0,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":true},{"id":"respond:package:SR+N2","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N2","clock":"respond","window_min":90,"accessibility":89.0,"holds":true}],"status":"CASCADE STOPPED","action":{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":true},"accessibility_after":89.0}],"accessibility":[89.0,89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":1.3,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":1.22,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":false,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.8,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.72,"boosted":1.0},"HS2":{"alive":true,"ratio":0.38,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"stopped","step":1,"accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":false,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.72,"boosted":1.0},"HS2":{"alive":true,"ratio":0.38,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":true,"ratio":0.35,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":1,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"B12":{"seed":"B12","steps":[{"step":1,"domino":{"edge":"FS","label":"Fire station approach","score":0.888,"components":{"load_stress":0.68,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":1.13},"interventions":[{"id":"respond:contraflow:FS","label":"Contraflow on Fire station approach","clock":"respond","window_min":90,"accessibility":89.0,"holds":false},{"id":"harden:reinforce:FS","label":"Reinforce and widen Fire station approach","clock":"harden","window_min":null,"accessibility":89.0,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":false},{"id":"respond:package:SR+FS","label":"Reopen Old crossing SR-2 + contraflow on Fire station approach","clock":"respond","window_min":90,"accessibility":89.0,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":64.2},{"step":2,"domino":{"edge":"A3","label":"Approach A3","score":1.0,"components":{"load_stress":1.0,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":1.82},"interventions":[{"id":"respond:contraflow:A3","label":"Contraflow on Approach A3","clock":"respond","window_min":90,"accessibility":64.2,"holds":false},{"id":"harden:reinforce:A3","label":"Reinforce and widen Approach A3","clock":"harden","window_min":null,"accessibility":64.2,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":64.2,"holds":false},{"id":"respond:package:SR+A3","label":"Reopen Old crossing SR-2 + contraflow on Approach A3","clock":"respond","window_min":90,"accessibility":64.2,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":51.3},{"step":3,"status":"settled"}],"accessibility":[89.0,64.2,51.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":1.66,"boosted":1.0},"N3":{"alive":true,"ratio":1.24,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.68,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":1.36,"boosted":1.0},"A3":{"alive":true,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":1.36,"boosted":1.0},"B12":{"alive":false,"ratio":0.0,"boosted":1.0},"A4":{"alive":true,"ratio":1.26,"boosted":1.0},"HS":{"alive":true,"ratio":0.41,"boosted":1.0},"HS2":{"alive":true,"ratio":0.69,"boosted":1.0},"FS":{"alive":true,"ratio":1.13,"boosted":1.0},"FS2":{"alive":true,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":64.2,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":1.66,"boosted":1.0},"N3":{"alive":true,"ratio":1.24,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.68,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":1.36,"boosted":1.0},"A3":{"alive":true,"ratio":1.82,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":1.36,"boosted":1.0},"B12":{"alive":false,"ratio":0.0,"boosted":1.0},"A4":{"alive":true,"ratio":1.26,"boosted":1.0},"HS":{"alive":true,"ratio":0.41,"boosted":1.0},"HS2":{"alive":true,"ratio":0.69,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":true,"ratio":1.07,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":8.58,"C2":5.95,"C3":3.4,"C4":5.95,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":2,"accessibility":51.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":0.62,"boosted":1.0},"N3":{"alive":true,"ratio":0.0,"boosted":1.0},"R11":{"alive":true,"ratio":0.47,"boosted":1.0},"R24":{"alive":true,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.46,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":1.0,"boosted":1.0},"A3":{"alive":false,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":1.0,"boosted":1.0},"B12":{"alive":false,"ratio":0.0,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.41,"boosted":1.0},"HS2":{"alive":true,"ratio":0.69,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":true,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":9.13,"C4":8.4,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2},{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":25,"t_comm_min":0,"t_dark_min":25,"priority":7.4}]},"A4":{"seed":"A4","steps":[{"step":1,"domino":{"edge":"N3","label":"Coastal road N3","score":0.356,"components":{"load_stress":0.567,"network_dependency":0.167,"emergency_impact":0.41,"population_exposure":0.091},"load_ratio":1.03},"interventions":[{"id":"respond:contraflow:N3","label":"Contraflow on Coastal road N3","clock":"respond","window_min":90,"accessibility":89.0,"holds":true},{"id":"harden:reinforce:N3","label":"Reinforce and widen Coastal road N3","clock":"harden","window_min":null,"accessibility":89.0,"holds":true},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":false},{"id":"respond:package:SR+N3","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N3","clock":"respond","window_min":90,"accessibility":89.0,"holds":true}],"status":"CASCADE STOPPED","action":{"id":"respond:contraflow:N3","label":"Contraflow on Coastal road N3","clock":"respond","window_min":90,"accessibility":89.0,"holds":true},"accessibility_after":89.0}],"accessibility":[89.0,89.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":1.03,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.31,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.94,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.69,"boosted":1.0},"A4":{"alive":false,"ratio":0.0,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"stopped","step":1,"accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.79,"boosted":1.3},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.31,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.94,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.69,"boosted":1.0},"A4":{"alive":false,"ratio":0.0,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":1,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"HS":{"seed":"HS","steps":[{"step":1,"domino":{"edge":"R24","label":"Inland road R24","score":0.897,"components":{"load_stress":1.0,"network_dependency":0.75,"emergency_impact":1.0,"population_exposure":0.733},"load_ratio":3.19},"interventions":[{"id":"respond:contraflow:R24","label":"Contraflow on Inland road R24","clock":"respond","window_min":90,"accessibility":80.9,"holds":false},{"id":"harden:reinforce:R24","label":"Reinforce and widen Inland road R24","clock":"harden","window_min":null,"accessibility":80.9,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":80.9,"holds":false},{"id":"respond:package:SR+R24","label":"Reopen Old crossing SR-2 + contraflow on Inland road R24","clock":"respond","window_min":90,"accessibility":80.9,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":80.9},{"step":2,"domino":{"edge":"N2","label":"Coastal road N2","score":1.0,"components":{"load_stress":1.0,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":3.42},"interventions":[{"id":"respond:contraflow:N2","label":"Contraflow on Coastal road N2","clock":"respond","window_min":90,"accessibility":80.9,"holds":false},{"id":"harden:reinforce:N2","label":"Reinforce and widen Coastal road N2","clock":"harden","window_min":null,"accessibility":80.9,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":80.9,"holds":false},{"id":"respond:package:SR+N2","label":"Reopen Old crossing SR-2 + contraflow on Coastal road N2","clock":"respond","window_min":90,"accessibility":80.9,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":65.3},{"step":3,"status":"settled"}],"accessibility":[80.9,80.9,65.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":80.9,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":3.19,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":false,"ratio":0.0,"boosted":1.0},"HS2":{"alive":true,"ratio":1.09,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":3.4,"I4":5.83},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":80.9,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":3.42,"boosted":1.0},"N3":{"alive":true,"ratio":1.67,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":false,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.09,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":2.64,"boosted":1.0},"A3":{"alive":true,"ratio":0.82,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":2.64,"boosted":1.0},"B12":{"alive":true,"ratio":0.49,"boosted":1.0},"A4":{"alive":true,"ratio":0.49,"boosted":1.0},"HS":{"alive":false,"ratio":0.0,"boosted":1.0},"HS2":{"alive":true,"ratio":1.09,"boosted":1.0},"FS":{"alive":true,"ratio":0.82,"boosted":1.0},"FS2":{"alive":true,"ratio":0.29,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":3.4,"I4":5.83},"dead_towers":["T1"]},{"phase":"domino","step":2,"accessibility":65.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":false,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.47,"boosted":1.0},"R24":{"alive":false,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.09,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.18,"boosted":1.0},"A4":{"alive":true,"ratio":0.0,"boosted":1.0},"HS":{"alive":false,"ratio":0.0,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.25,"boosted":1.0},"FS2":{"alive":true,"ratio":0.29,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":3.4,"I4":5.83},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2},{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":50,"t_comm_min":0,"t_dark_min":50,"priority":7.4}]},"HS2":{"seed":"HS2","steps":[{"step":1,"domino":{"edge":"HS","label":"Hospital approach","score":0.882,"components":{"load_stress":0.664,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":1.11},"interventions":[{"id":"respond:contraflow:HS","label":"Contraflow on Hospital approach","clock":"respond","window_min":90,"accessibility":82.4,"holds":false},{"id":"harden:reinforce:HS","label":"Reinforce and widen Hospital approach","clock":"harden","window_min":null,"accessibility":82.4,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":82.4,"holds":false},{"id":"respond:package:SR+HS","label":"Reopen Old crossing SR-2 + contraflow on Hospital approach","clock":"respond","window_min":90,"accessibility":82.4,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":57.0},{"step":2,"status":"settled"}],"accessibility":[82.4,57.0],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":82.4,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":3.26,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":1.11,"boosted":1.0},"HS2":{"alive":false,"ratio":0.0,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":6.61,"I2":4.19,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":57.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.08,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.09,"boosted":1.0},"A1":{"alive":true,"ratio":0.0,"boosted":1.0},"A2":{"alive":true,"ratio":0.0,"boosted":1.0},"A3":{"alive":true,"ratio":0.0,"boosted":1.0},"B03":{"alive":true,"ratio":0.0,"boosted":1.0},"B07":{"alive":true,"ratio":0.0,"boosted":1.0},"B12":{"alive":true,"ratio":0.35,"boosted":1.0},"A4":{"alive":true,"ratio":0.0,"boosted":1.0},"HS":{"alive":false,"ratio":0.0,"boosted":1.0},"HS2":{"alive":false,"ratio":0.0,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":8.24,"I2":5.82,"I3":3.4,"I4":5.83},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"FS":{"seed":"FS","steps":[{"step":1,"domino":{"edge":"FS2","label":"Fire east approach","score":0.865,"components":{"load_stress":0.615,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":1.07},"interventions":[{"id":"respond:contraflow:FS2","label":"Contraflow on Fire east approach","clock":"respond","window_min":90,"accessibility":64.2,"holds":false},{"id":"harden:reinforce:FS2","label":"Reinforce and widen Fire east approach","clock":"harden","window_min":null,"accessibility":64.2,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":64.2,"holds":false},{"id":"respond:package:SR+FS2","label":"Reopen Old crossing SR-2 + contraflow on Fire east approach","clock":"respond","window_min":90,"accessibility":64.2,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":51.3},{"step":2,"status":"settled"}],"accessibility":[64.2,51.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":64.2,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":1.44,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":true,"ratio":1.07,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":8.58,"C2":5.95,"C3":3.4,"C4":5.95,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":51.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.0,"boosted":1.0},"R11":{"alive":true,"ratio":0.47,"boosted":1.0},"R24":{"alive":true,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.46,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.2,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":false,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":6.33,"C4":8.4,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":7.4},{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2}]},"FS2":{"seed":"FS2","steps":[{"step":1,"domino":{"edge":"FS","label":"Fire station approach","score":0.888,"components":{"load_stress":0.68,"network_dependency":1.0,"emergency_impact":1.0,"population_exposure":1.0},"load_ratio":1.13},"interventions":[{"id":"respond:contraflow:FS","label":"Contraflow on Fire station approach","clock":"respond","window_min":90,"accessibility":89.0,"holds":false},{"id":"harden:reinforce:FS","label":"Reinforce and widen Fire station approach","clock":"harden","window_min":null,"accessibility":89.0,"holds":false},{"id":"respond:open:SR","label":"Reopen Old crossing SR-2","clock":"respond","window_min":60,"accessibility":89.0,"holds":false},{"id":"respond:package:SR+FS","label":"Reopen Old crossing SR-2 + contraflow on Fire station approach","clock":"respond","window_min":90,"accessibility":89.0,"holds":false}],"status":"CASCADE CONTINUES","accessibility_after":51.3},{"step":2,"status":"settled"}],"accessibility":[89.0,51.3],"frames":[{"phase":"baseline","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.31,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.55,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.55,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":0.55,"boosted":1.0},"FS2":{"alive":true,"ratio":0.55,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":[]},{"phase":"failure","accessibility":89.0,"edges":{"N1":{"alive":true,"ratio":0.37,"boosted":1.0},"N2":{"alive":true,"ratio":0.55,"boosted":1.0},"N3":{"alive":true,"ratio":0.58,"boosted":1.0},"R11":{"alive":true,"ratio":0.55,"boosted":1.0},"R24":{"alive":true,"ratio":0.55,"boosted":1.0},"R31":{"alive":true,"ratio":0.46,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":1.34,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.5,"boosted":1.0},"A4":{"alive":true,"ratio":0.76,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":true,"ratio":1.13,"boosted":1.0},"FS2":{"alive":false,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":6.67,"C2":4.04,"C3":1.49,"C4":4.04,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]},{"phase":"domino","step":1,"accessibility":51.3,"edges":{"N1":{"alive":true,"ratio":0.0,"boosted":1.0},"N2":{"alive":true,"ratio":0.0,"boosted":1.0},"N3":{"alive":true,"ratio":0.0,"boosted":1.0},"R11":{"alive":true,"ratio":0.47,"boosted":1.0},"R24":{"alive":true,"ratio":0.0,"boosted":1.0},"R31":{"alive":true,"ratio":0.46,"boosted":1.0},"A1":{"alive":true,"ratio":0.55,"boosted":1.0},"A2":{"alive":true,"ratio":0.55,"boosted":1.0},"A3":{"alive":true,"ratio":0.55,"boosted":1.0},"B03":{"alive":true,"ratio":0.55,"boosted":1.0},"B07":{"alive":true,"ratio":0.55,"boosted":1.0},"B12":{"alive":true,"ratio":0.2,"boosted":1.0},"A4":{"alive":true,"ratio":0.55,"boosted":1.0},"HS":{"alive":true,"ratio":0.55,"boosted":1.0},"HS2":{"alive":true,"ratio":0.55,"boosted":1.0},"FS":{"alive":false,"ratio":0.0,"boosted":1.0},"FS2":{"alive":false,"ratio":0.0,"boosted":1.0},"SR":{"alive":false,"ratio":0.0,"boosted":1.0}},"wards":{"C1":9.19,"C2":6.58,"C3":6.33,"C4":8.4,"I1":4.42,"I2":2.0,"I3":1.77,"I4":4.2},"dead_towers":["T1"]}],"baseline_accessibility":89.0,"containment_horizon":0,"stopped":true,"dark_zones":[{"node":"C1","label":"Malpe ward","population":5200,"t_phys_min":0,"t_comm_min":0,"t_dark_min":0,"priority":5.2},{"node":"C2","label":"Kadiyali ward","population":7400,"t_phys_min":25,"t_comm_min":0,"t_dark_min":25,"priority":7.4}]}}}, PLANS = {"population":47200,"baseline_access":89.0,"baseline_expected_loss":8178,"baseline_resilience":82.7,"harden_multiplier":1.75,"costs":{"N1":3.2,"N2":3.1,"N3":3.1,"R11":2.9,"R24":2.9,"R31":2.9,"A1":3.3,"A2":3.0,"A3":2.7,"B03":12.1,"B07":12.7,"B12":13.7,"A4":5.0,"HS":2.1,"HS2":2.4,"FS":1.8,"FS2":1.3},"labels":{"N1":"Coastal road N1","N2":"Coastal road N2","N3":"Coastal road N3","R11":"Inland road R11","R24":"Inland road R24","R31":"Inland road R31","A1":"Approach A1","A2":"Approach A2","A3":"Approach A3","B03":"Bridge B03","B07":"Bridge B07","B12":"Bridge B12","A4":"North link A4","HS":"Hospital approach","HS2":"Hospital south approach","FS":"Fire station approach","FS2":"Fire east approach"},"budgets":{"5":{"domino":{"assets":["FS","N2"],"spent":4.9,"steps":[{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5496,"saved":2682},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":4625,"saved":871}],"protected":3553,"expected_loss":4625,"resilience":90.2},"conventional":{"assets":["HS","HS2"],"spent":4.5,"steps":[{"asset":"HS","label":"Hospital approach","cost":2.1,"exp_loss":8641,"saved":-464},{"asset":"HS2","label":"Hospital south approach","cost":2.4,"exp_loss":8158,"saved":483}],"protected":19,"expected_loss":8158,"resilience":82.7},"advantage":182.81},"10":{"domino":{"assets":["A3","FS","FS2","N2"],"spent":8.9,"steps":[{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5496,"saved":2682},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":4625,"saved":871},{"asset":"A3","label":"Approach A3","cost":2.7,"exp_loss":4444,"saved":180},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":4086,"saved":358}],"protected":4092,"expected_loss":4086,"resilience":91.3},"conventional":{"assets":["FS","FS2","HS","HS2"],"spent":7.6,"steps":[{"asset":"HS","label":"Hospital approach","cost":2.1,"exp_loss":8641,"saved":-464},{"asset":"HS2","label":"Hospital south approach","cost":2.4,"exp_loss":8158,"saved":483},{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5960,"saved":2198},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":6185,"saved":-225}],"protected":1993,"expected_loss":6185,"resilience":86.9},"advantage":2.05},"20":{"domino":{"assets":["A3","FS","FS2","N2"],"spent":8.9,"steps":[{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5496,"saved":2682},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":4625,"saved":871},{"asset":"A3","label":"Approach A3","cost":2.7,"exp_loss":4444,"saved":180},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":4086,"saved":358}],"protected":4092,"expected_loss":4086,"resilience":91.3},"conventional":{"assets":["B12","FS","HS","HS2"],"spent":20.0,"steps":[{"asset":"B12","label":"Bridge B12","cost":13.7,"exp_loss":8178,"saved":0},{"asset":"HS","label":"Hospital approach","cost":2.1,"exp_loss":8641,"saved":-464},{"asset":"HS2","label":"Hospital south approach","cost":2.4,"exp_loss":8158,"saved":483},{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5960,"saved":2198}],"protected":2218,"expected_loss":5960,"resilience":87.4},"advantage":1.84},"30":{"domino":{"assets":["A3","FS","FS2","N2"],"spent":8.9,"steps":[{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5496,"saved":2682},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":4625,"saved":871},{"asset":"A3","label":"Approach A3","cost":2.7,"exp_loss":4444,"saved":180},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":4086,"saved":358}],"protected":4092,"expected_loss":4086,"resilience":91.3},"conventional":{"assets":["B12","FS","FS2","HS","HS2","N2","R11"],"spent":27.3,"steps":[{"asset":"B12","label":"Bridge B12","cost":13.7,"exp_loss":8178,"saved":0},{"asset":"HS","label":"Hospital approach","cost":2.1,"exp_loss":8641,"saved":-464},{"asset":"HS2","label":"Hospital south approach","cost":2.4,"exp_loss":8158,"saved":483},{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5960,"saved":2198},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":6951,"saved":-991},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":6079,"saved":871},{"asset":"R11","label":"Inland road R11","cost":2.9,"exp_loss":6079,"saved":0}],"protected":2098,"expected_loss":6079,"resilience":87.1},"advantage":1.95},"50":{"domino":{"assets":["A3","FS","FS2","N2"],"spent":8.9,"steps":[{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5496,"saved":2682},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":4625,"saved":871},{"asset":"A3","label":"Approach A3","cost":2.7,"exp_loss":4444,"saved":180},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":4086,"saved":358}],"protected":4092,"expected_loss":4086,"resilience":91.3},"conventional":{"assets":["A1","A2","A3","B12","FS","FS2","HS","HS2","N1","N2","N3","R11","R24","R31"],"spent":48.4,"steps":[{"asset":"B12","label":"Bridge B12","cost":13.7,"exp_loss":8178,"saved":0},{"asset":"HS","label":"Hospital approach","cost":2.1,"exp_loss":8641,"saved":-464},{"asset":"HS2","label":"Hospital south approach","cost":2.4,"exp_loss":8158,"saved":483},{"asset":"FS","label":"Fire station approach","cost":1.8,"exp_loss":5960,"saved":2198},{"asset":"FS2","label":"Fire east approach","cost":1.3,"exp_loss":6951,"saved":-991},{"asset":"N2","label":"Coastal road N2","cost":3.1,"exp_loss":6079,"saved":871},{"asset":"R11","label":"Inland road R11","cost":2.9,"exp_loss":6079,"saved":0},{"asset":"R24","label":"Inland road R24","cost":2.9,"exp_loss":6079,"saved":0},{"asset":"R31","label":"Inland road R31","cost":2.9,"exp_loss":5674,"saved":405},{"asset":"N1","label":"Coastal road N1","cost":3.2,"exp_loss":5674,"saved":0},{"asset":"N3","label":"Coastal road N3","cost":3.1,"exp_loss":5674,"saved":0},{"asset":"A1","label":"Approach A1","cost":3.3,"exp_loss":5674,"saved":0},{"asset":"A2","label":"Approach A2","cost":3.0,"exp_loss":5674,"saved":0},{"asset":"A3","label":"Approach A3","cost":2.7,"exp_loss":5316,"saved":358}],"protected":2862,"expected_loss":5316,"resilience":88.7},"advantage":1.43}}};
+const G = DATA.graph, META = DATA.meta;
+const NODE = Object.fromEntries(G.nodes.map(n => [n.id, n]));
+const $ = s => document.querySelector(s);
+const fmt = n => n.toLocaleString();
+
+let seed = "B07", frame = 0, timer = null, budget = "10";
+const scen  = () => DATA.scenarios[seed];
+const frames= () => scen().frames;
+const seedLabel = () => (G.edges.find(e => e.id === seed) || {}).label || seed;
+
+/* ─────────── map geometry ─────────── */
+const PAD = 48, W = 520, H = 590;
+const xs = G.nodes.map(n=>n.x), ys = G.nodes.map(n=>n.y);
+const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+const sc = Math.min((W-2*PAD)/(x1-x0), (H-2*PAD)/(y1-y0));
+const px = x => PAD + (x-x0)*sc, py = y => H - PAD - (y-y0)*sc;
+
+const P = {ink:"#EAF2F9", ink2:"#A4B6C7", ink3:"#78899B", ink4:"#5A6B7C",
+           panel:"#111922", panel2:"#18222E", line2:"#31465C", bg:"#0B1017",
+           amber:"#FF8A3D", red:"#FF5449", teal:"#2FD6A8", violet:"#A98BFF",
+           road:"#4A6480", roadQuiet:"#35485C"};
+
+function roadColour(r, alive){
+  if(!alive) return P.red;
+  if(r > 1.0) return P.red;
+  if(r > .85) return P.amber;
+  if(r > .6)  return P.road;
+  return P.roadQuiet;
+}
+
+function drawMap(){
+  const f = frames()[frame];
+  const showDark = f.phase !== "baseline";
+  const dz = {}; scen().dark_zones.forEach(z => dz[z.node] = z);
+  const dead = new Set(f.dead_towers);
+  let s = `<defs><filter id="gl" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="4" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter></defs>`;
+
+  G.nodes.filter(n=>n.kind==="tower").forEach(n=>{
+    if(dead.has(n.id)) return;
+    s += `<circle cx="${px(n.x)}" cy="${py(n.y)}" r="${META.tower_radius_km*sc}"
+      fill="${P.teal}" fill-opacity=".035" stroke="${P.teal}" stroke-opacity=".20"
+      stroke-width="1.3" stroke-dasharray="5 4"/>`;
+  });
+
+  G.edges.forEach(e=>{
+    const st = f.edges[e.id] || {alive:e.alive, ratio:0};
+    const a = NODE[e.u], b = NODE[e.v];
+    const closed = e.kind==="service" && !st.alive;
+    const col = closed ? P.line2 : roadColour(st.ratio, st.alive);
+    const hot = st.alive && st.ratio > 1;
+    const w = st.alive ? (st.ratio>1?7:st.ratio>.85?6:5) : 4;
+    const dash = st.alive ? (e.kind==="service" ? "6 5" : "") : "8 6";
+    s += `<line class="hit" data-e="${e.id}" x1="${px(a.x)}" y1="${py(a.y)}"
+      x2="${px(b.x)}" y2="${py(b.y)}" stroke="${col}" stroke-width="${w}"
+      stroke-linecap="round" stroke-dasharray="${dash}" stroke-opacity="${closed?.55:1}"
+      ${hot?'filter="url(#gl)"':""}>
+      <title>${e.label}${st.alive?` — carrying ${Math.round(st.ratio*100)}% of what it was built for`:" — jammed"}</title></line>`;
+    if(st.alive && st.ratio > 1){
+      const mx=(px(a.x)+px(b.x))/2, my=(py(a.y)+py(b.y))/2;
+      s += `<rect x="${mx-20}" y="${my-19}" width="40" height="16" rx="8" fill="${P.bg}"
+        stroke="${P.red}" stroke-width="1.4"/>
+        <text x="${mx}" y="${my-7}" font-size="11" font-weight="700" fill="${P.red}"
+        text-anchor="middle">${st.ratio}×</text>`;
+    }
+    if(e.id===seed && !st.alive){
+      const mx=(px(a.x)+px(b.x))/2, my=(py(a.y)+py(b.y))/2;
+      s += `<circle class="pulse" cx="${mx}" cy="${my}" r="14" fill="${P.red}" fill-opacity=".45"/>
+        <circle cx="${mx}" cy="${my}" r="10" fill="${P.bg}" stroke="${P.red}" stroke-width="2.8"/>
+        <path d="M ${mx-4.5} ${my-4.5} l 9 9 M ${mx+4.5} ${my-4.5} l -9 9"
+          stroke="${P.red}" stroke-width="2.6" stroke-linecap="round"/>`;
+    }
+  });
+
+  G.nodes.filter(n=>n.population>0).forEach(n=>{
+    const d = f.wards[n.id] ?? 99, far = d > META.threshold_km;
+    const z = showDark ? dz[n.id] : null;
+    const r = 8 + Math.sqrt(n.population)/26;
+    if(z) s += `<circle cx="${px(n.x)}" cy="${py(n.y)}" r="${r+13}" fill="${P.violet}"
+      fill-opacity=".22" filter="url(#gl)"/>`;
+    s += `<circle cx="${px(n.x)}" cy="${py(n.y)}" r="${r}" fill="${P.panel}"
+      stroke="${z?P.violet:far?P.red:P.ink3}" stroke-width="${z?3:2}"/>
+      <text x="${px(n.x)}" y="${py(n.y)-r-7}" font-size="11.5" font-weight="600"
+        fill="${P.ink}" text-anchor="middle">${n.label.replace(" ward","")}</text>`;
+    s += z
+      ? `<text x="${px(n.x)}" y="${py(n.y)+r+15}" font-size="11" font-weight="700"
+          fill="${P.violet}" text-anchor="middle">dark in ${z.t_dark_min} min</text>`
+      : `<text x="${px(n.x)}" y="${py(n.y)+r+14}" font-size="10.5"
+          fill="${far?P.red:P.ink4}" text-anchor="middle">${d.toFixed(1)} km to help</text>`;
+  });
+
+  G.nodes.forEach(n=>{
+    if(n.kind==="hospital"||n.kind==="fire"){
+      const t = n.kind==="hospital" ? "H" : "F";
+      s += `<rect x="${px(n.x)-13}" y="${py(n.y)-13}" width="26" height="26" rx="7"
+        fill="${P.panel}" stroke="${P.teal}" stroke-width="2.8" filter="url(#gl)"/>
+        <text x="${px(n.x)}" y="${py(n.y)+5}" font-size="15" font-weight="700" fill="${P.teal}"
+          text-anchor="middle">${t}</text>
+        <text x="${px(n.x)}" y="${py(n.y)-19}" font-size="11" font-weight="700" fill="${P.teal}"
+          text-anchor="middle">${n.label}</text>`;
+    }
+    if(n.kind==="tower"){
+      const out = dead.has(n.id), c = out ? P.red : P.ink4;
+      s += `<path d="M ${px(n.x)} ${py(n.y)-8} L ${px(n.x)+7} ${py(n.y)+6}
+        L ${px(n.x)-7} ${py(n.y)+6} Z" fill="${P.panel}" stroke="${c}" stroke-width="1.8"/>`;
+      if(out) s += `<path d="M ${px(n.x)-6} ${py(n.y)-8} l 12 12 M ${px(n.x)+6} ${py(n.y)-8}
+        l -12 12" stroke="${P.red}" stroke-width="2" stroke-linecap="round"/>
+        <text x="${px(n.x)}" y="${py(n.y)+19}" font-size="10" font-weight="700" fill="${P.red}"
+          text-anchor="middle">tower down</text>`;
+    }
+  });
+  $("#map").innerHTML = s;
+  $("#map").querySelectorAll(".hit").forEach(el => el.onclick = () => {
+    const id = el.dataset.e;
+    if(DATA.scenarios[id]){ seed = id; frame = 0; stop(); $("#seed").value = id; render(); }
+  });
+}
+
+/* ─────────── plain-English narration ─────────── */
+function narrate(){
+  const tr = scen(), f = frames()[frame], base = tr.baseline_accessibility;
+  const st = f.step ? tr.steps.find(s=>s.step===f.step) : null;
+  const lost = Math.round(META.population * (base - f.accessibility)/100);
+
+  if(f.phase==="baseline") return {tone:"", h:`Everything is working.`,
+    b:`${base}% of the ${fmt(META.population)} people here can reach a hospital or a fire
+       station within ${META.threshold_km} km. Press <b>Next step</b> to break something.`};
+
+  if(f.phase==="failure"){
+    const over = overloaded(f);
+    const moved = Math.abs(f.accessibility - base) > 0.05;
+    return {tone:"bad", h:`${seedLabel()} has just failed.`,
+      b: (moved
+          ? `A phone tower went down with it, and ${fmt(lost)} people are already outside
+             ${META.threshold_km} km of help. `
+          : `A phone tower went down with it. Look at the number below — it has not moved.
+             Everybody can still reach help, so on an ordinary damage map this looks
+             survivable. That is the trap. `)
+        + (over.length
+          ? `The traffic that used ${seedLabel()} had to go somewhere, and
+             <b>${over.length} road${over.length>1?"s are":" is"} now carrying more than
+             ${over.length>1?"they were":"it was"} built for</b> — worst is
+             ${over[0].label} at ${over[0].ratio}×. Press Next step to see which one goes
+             first, and whether anything can stop it.`
+          : `No road has been pushed past its capacity, so this one stops here.`)};
+  }
+
+  if(f.phase==="stopped") return {tone:"good",
+    h:`The chain stops here.`,
+    b:`${st ? st.action.label : "An action"} works, and it can be done in
+       ${st && st.action.window_min ? st.action.window_min+" minutes" : "advance"}.
+       Access stays at ${f.accessibility}%. Nobody is cut off.`};
+
+  const nxt = st ? st.domino : null;
+  return {tone:"bad",
+    h:`${nxt ? nxt.label : "A road"} has jammed, and ${fmt(lost)} people just lost their route to help.`,
+    b:`Nothing we could do in time held it. The traffic pushed onto ${nxt?nxt.label:"it"}
+       was ${nxt?nxt.load_ratio:""}× what it was built for, so it gridlocked too. Access is
+       down to ${f.accessibility}%, ${(base-f.accessibility).toFixed(1)} points below where
+       we started.`};
+}
+
+function overloaded(f){
+  return Object.entries(f.edges)
+    .filter(([id,s]) => s.alive && s.ratio > 1)
+    .map(([id,s]) => ({id, ratio:s.ratio,
+                       label:(G.edges.find(e=>e.id===id)||{}).label || id}))
+    .sort((a,b) => b.ratio - a.ratio);
+}
+
+const PLAIN = {
+  load_stress:"How overloaded it is right now",
+  network_dependency:"How much of the network runs through it",
+  emergency_impact:"Whether ambulances and fire engines use it",
+  population_exposure:"How many people live behind it"};
+const COL = {load_stress:"var(--amber)", network_dependency:"var(--blue)",
+             emergency_impact:"var(--red)", population_exposure:"var(--teal)"};
+
+function render(){
+  const tr = scen(), f = frames()[frame], base = tr.baseline_accessibility;
+  $("#i-pop").textContent = fmt(META.population);
+
+  $("#dots").innerHTML = frames().map((_,i)=>`<i class="dot ${i<=frame?"on":""}"></i>`).join("")
+    + `<span style="margin-left:8px">step ${frame+1} of ${frames().length}</span>`;
+
+  const n = narrate();
+  $("#say").className = "say " + n.tone;
+  $("#say .h").innerHTML = n.h;
+  $("#say .b").innerHTML = n.b;
+
+  $("#acc").textContent = f.accessibility.toFixed(1) + "%";
+  $("#acc").style.color = f.accessibility < base-0.05 ? "var(--red)" : "var(--ink)";
+  const lost = Math.round(META.population*(base-f.accessibility)/100);
+  $("#accT").innerHTML = lost > 0
+    ? `<b style="color:var(--red)">${fmt(lost)} people</b> have no route within
+       ${META.threshold_km} km<br>started at ${base}%`
+    : `everyone who could reach help before, still can<br>started at ${base}%`;
+  $("#accBar").style.width = f.accessibility + "%";
+  $("#accBar").style.background = f.accessibility < base-0.05 ? "var(--red)" : "var(--teal)";
+
+  const st = f.step ? tr.steps.find(s=>s.step===f.step) : null;
+  if(!st){
+    const over = overloaded(f);
+    $("#domBody").innerHTML =
+      f.phase==="baseline" ? `<div style="color:var(--ink4)">Press <b>Next step</b> to begin.</div>`
+      : over.length ? `<div style="font-size:13.5px;color:var(--ink2);margin-top:6px">
+          Not decided yet. ${over.length} road${over.length>1?"s are":" is"} over capacity:</div>`
+          + over.map(o=>`<div class="opt"><div>${o.label}</div>
+              <div><b style="color:var(--red)">${o.ratio}×</b></div></div>`).join("")
+          + `<div style="font-size:12.5px;color:var(--ink3);margin-top:8px">
+             The engine picks the one with the highest score as the next domino.</div>`
+      : `<div style="color:var(--ink4)">No road is over capacity at this point.</div>`;
+  } else {
+    const d = st.domino;
+    let h = `<div style="font-family:'Source Serif 4',Georgia,serif;font-size:19px;
+        font-weight:700;margin-top:6px">${d.label}</div>
+      <div style="font-size:13.5px;color:var(--ink2)">It is now carrying
+        <b>${d.load_ratio}×</b> the traffic it was built for.</div>
+      <div class="lbl" style="margin-top:14px">Why this one, and not another road</div><div class="why">`;
+    for(const k in d.components){
+      const v = d.components[k];
+      h += `<div class="r"><span>${PLAIN[k]}</span><span>${Math.round(v*100)}%</span></div>
+        <div class="track"><i style="width:${v*100}%;background:${COL[k]}"></i></div>`;
+    }
+    h += `</div><div class="lbl" style="margin-top:16px">What we tried, before it broke</div>`;
+    st.interventions.forEach(o=>{
+      h += `<div class="opt ${o.holds?"holds":""}">
+        <div><div>${o.label}</div><div class="s">${
+          o.window_min ? "can be done in "+o.window_min+" minutes" : "months of work, capital budget"}</div></div>
+        <div style="text-align:right"><span class="tag" style="color:${
+          o.holds?"var(--teal)":"var(--ink4)"}">${o.holds?"works":"not enough"}</span></div></div>`;
+    });
+    $("#domBody").innerHTML = h;
+  }
+
+  const hz = tr.containment_horizon, any = tr.steps.some(s=>s.domino);
+  $("#hz").textContent = !any ? "—" : hz>0 ? "Yes" : "No";
+  $("#hz").style.color = hz>0 ? "var(--teal)" : any ? "var(--red)" : "var(--ink3)";
+  $("#hzT").innerHTML = !any
+    ? "This failure never spreads. The corridor absorbs it."
+    : hz>0
+      ? `We can stop it, but only at step ${hz}. After that, every option is too late.<br>
+         <b>That step number is the thing a city can put in a report.</b>`
+      : `Nothing available on the day holds this chain.<br>
+         <b>The only fix is to reinforce it before it ever fails — a capital decision.</b>`;
+
+  $("#dz").innerHTML = tr.dark_zones.length===0
+    ? `<span style="color:var(--ink4)">None under this failure.</span>`
+    : tr.dark_zones.map(z=>{
+        const pre = (frames()[0].wards[z.node] ?? 0) > META.threshold_km;
+        return `<div class="opt" style="border-color:var(--violet);
+        background:rgba(94,53,177,.07)">
+        <div><div><b>${z.label}</b></div>
+          <div class="s">${fmt(z.population)} people · no road to help after
+            ${z.t_phys_min} min · no signal after ${z.t_comm_min} min${
+            pre ? ` · <i>already outside ${META.threshold_km} km before anything failed —
+                   losing the tower is what makes it dark</i>` : ""}</div></div>
+        <div style="text-align:right;font-family:'Source Serif 4',Georgia,serif;
+          font-size:19px;font-weight:700;color:var(--violet);white-space:nowrap">${z.t_dark_min} min</div></div>`;
+      }).join("")
+      + `<div style="font-size:12.5px;color:var(--ink3);margin-top:10px">
+         A neighbourhood is only dark when <b>both</b> are true, so it goes dark at the later
+         of the two times. The gap in between is your window to get people there first.</div>`;
+
+  document.querySelectorAll("#pb tbody tr").forEach(r=>
+    r.classList.toggle("sel", r.dataset.seed===seed));
+  $("#prev").disabled = frame===0;
+  $("#next").disabled = frame>=frames().length-1;
+  drawMap();
+}
+
+/* ─────────── tab 2 ─────────── */
+function renderPlan(){
+  const p = PLANS.budgets[budget], tot = PLANS.population;
+  const buys = st => st.length
+    ? st.map(s=>`<div class="buy"><span>${s.label}</span>
+        <span>₹${s.cost} cr</span></div>`).join("")
+    : `<div style="font-size:13px;color:var(--ink4)">Nothing affordable helps.</div>`;
+  $("#cBuys").innerHTML = buys(p.conventional.steps);
+  $("#dBuys").innerHTML = buys(p.domino.steps);
+  $("#cProt").textContent = fmt(p.conventional.protected);
+  $("#dProt").textContent = fmt(p.domino.protected);
+  $("#cSpent").textContent = `spent ₹${p.conventional.spent} cr of ₹${budget} cr`;
+  $("#dSpent").textContent = `spent ₹${p.domino.spent} cr of ₹${budget} cr`;
+  const mx = Math.max(p.conventional.protected, p.domino.protected, 1);
+  $("#barC").style.boxShadow="none"; $("#barC").style.width = (p.conventional.protected/mx*100)+"%";
+  $("#barD").style.boxShadow="0 0 22px rgba(47,214,168,.35)"; $("#barD").style.width = (p.domino.protected/mx*100)+"%";
+  const adv = p.advantage;
+  $("#verdict").innerHTML = adv
+    ? `Same budget. DOMINO protects ${fmt(p.domino.protected)} people,
+       the standard method protects ${fmt(p.conventional.protected)}.
+       <span style="color:var(--teal)">${adv}× more.</span>`
+    : `At this budget the standard method protects almost nobody.`;
+  $("#verdict2").innerHTML =
+    `And DOMINO stops spending at ₹${p.domino.spent} crore, because nothing else it could
+     buy would win back another person. Resilience goes from
+     <b>${PLANS.baseline_resilience}</b> to <b>${p.domino.resilience}</b> out of 100,
+     against <b>${p.conventional.resilience}</b> for the standard plan.`;
+  document.querySelectorAll("#budgets button").forEach(b=>
+    b.classList.toggle("on", b.dataset.b===budget));
+}
+
+/* ─────────── tab 3 ─────────── */
+function playbook(){
+  const tot = META.population;
+  $("#pb tbody").innerHTML = DATA.playbook.map(c=>{
+    const stop = c.outcome==="contained" ? `<span class="tag" style="color:var(--teal)">yes, at step ${c.horizon}</span>`
+      : c.outcome==="uncontained" ? `<span class="tag" style="color:var(--red)">no</span>`
+      : `<span class="tag" style="color:var(--ink4)">never spreads</span>`;
+    const lost = Math.round(tot*(DATA.scenarios[c.seed].baseline_accessibility - c.final_accessibility)/100);
+    return `<tr data-seed="${c.seed}"><td style="font-weight:600">${c.seed_label}</td>
+      <td>${stop}</td><td>${lost>0?fmt(lost):"—"}</td>
+      <td style="color:var(--ink2)">${c.action ||
+        (c.outcome==="no cascade" ? "nothing needed" : "reinforce it before it fails")}</td></tr>`;
+  }).join("");
+  $("#pb tbody").querySelectorAll("tr").forEach(r => r.onclick = ()=>{
+    seed = r.dataset.seed; frame = 0; stop(); $("#seed").value = seed;
+    document.querySelector('.tab[data-p="p1"]').click(); render();
+  });
+}
+
+/* ─────────── wiring ─────────── */
+function stop(){ if(timer){clearInterval(timer); timer=null; $("#play").textContent="▶ Play";} }
+$("#next").onclick = ()=>{ if(frame<frames().length-1){frame++; render();} };
+$("#prev").onclick = ()=>{ if(frame>0){frame--; render();} };
+$("#reset").onclick = ()=>{ frame=0; stop(); render(); };
+$("#play").onclick = ()=>{
+  if(timer) return stop();
+  if(frame>=frames().length-1) frame=0;
+  $("#play").textContent="❚❚ Pause";
+  timer=setInterval(()=>{ frame<frames().length-1 ? (frame++, render()) : stop(); }, 2600);
+};
+$("#seed").innerHTML = DATA.playbook.map(c=>
+  `<option value="${c.seed}">${c.seed_label}</option>`).join("");
+$("#seed").value = seed;
+$("#seed").onchange = e => { seed=e.target.value; frame=0; stop(); render(); };
+document.querySelectorAll(".tab").forEach(t => t.onclick = ()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));
+  document.querySelectorAll(".page").forEach(x=>x.classList.remove("on"));
+  t.classList.add("on"); document.getElementById(t.dataset.p).classList.add("on");
+});
+$("#budgets").innerHTML = Object.keys(PLANS.budgets).map(b=>
+  `<button data-b="${b}">₹${b} cr</button>`).join(" ");
+$("#budgets").querySelectorAll("button").forEach(b=> b.onclick = ()=>{
+  budget=b.dataset.b; renderPlan(); });
+
+$("#foot").innerHTML =
+  `Everything on this page is computed by our engine: shortest-path access against a
+   ${META.threshold_km} km threshold, traffic reassigned after every failure, a four-part
+   score for what breaks next, and each possible action re-run as a counterfactual.
+   ${META.scenario_count} failures and 5 budget levels are precomputed.
+   <b>The corridor is synthetic</b>, shaped like Udupi–Manipal: the machine this was built on
+   had no internet access to pull a real OpenStreetMap extract. Swapping real geometry in
+   replaces one loader function and nothing else. The 570,509 / 81.1% / 68.3% / 83.3%
+   figures in our deck come from a separate study on real population data and are not
+   produced by this prototype.`;
+
+playbook(); renderPlan(); render();
+</script></body></html>
